@@ -1,0 +1,109 @@
+name: mongodb_replica_set
+
+services:
+  primary:
+    entrypoint: >
+      /bin/bash -c '
+      openssl rand -base64 756 > /data/keyfile.key &&
+      chmod 400 /data/keyfile.key &&
+      chown mongodb:mongodb /data/keyfile.key &&
+      /usr/local/bin/docker-entrypoint.sh mongod --port 27017 --replSet rs0 --bind_ip_all --keyFile /data/keyfile.key' --quiet
+    image: 'mongo:latest'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=sa
+      - MONGO_INITDB_ROOT_PASSWORD=Password123
+      - MONGO_INITDB_DATABASE=myDatabase
+    volumes:
+      - 'mongo1data:/data/db'
+      - 'mongo1config:/data/configdb'
+      - 'sharedconfig:/data'
+    healthcheck:
+      test: mongosh
+        -u sa
+        -p Password123
+        --eval "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'host.docker.internal:27017',priority:1},{_id:1,host:'host.docker.internal:27018',priority:0.5},{_id:2,host:'host.docker.internal:27019',priority:0.5}]}) }" | mongosh --port 27017 --quiet
+      interval: 5s
+      timeout: 30s
+      start_period: 0s
+      start_interval: 1s
+      retries: 30
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: 4.5
+          memory: 5GB
+        reservations:
+          cpus: 3
+          memory: 3GB
+
+  replica_1:
+    image: 'mongo:latest'
+    command: mongod --port 27018 --replSet rs0 --bind_ip_all --keyFile /data/keyfile.key --quiet
+    ports:
+      - "27018:27018"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: >
+        mongosh --host host:'host.docker.internal --port 27017 -u sa -p Password123 --eval "db.adminCommand('ping')"
+      interval: 5s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - 'mongo2data:/data/db'
+      - 'mongo2config:/data/configdb'
+      - 'sharedconfig:/data'
+    deploy:
+      resources:
+        limits:
+          cpus: 3
+          memory: 3GB
+        reservations:
+          cpus: 2
+          memory: 2GB
+
+  replica_2:
+    image: 'mongo:latest'
+    command: mongod --port 27019 --replSet rs0 --bind_ip_all --keyFile /data/keyfile.key --quiet
+    ports:
+      - "27019:27019"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: >
+        mongosh --host host:'host.docker.internal --port 27017 -u sa -p Password123 --eval "db.adminCommand('ping')"
+      interval: 5s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - 'mongo3data:/data/db'
+      - 'mongo3config:/data/configdb'
+      - 'sharedconfig:/data'
+    deploy:
+      resources:
+        limits:
+          cpus: 3
+          memory: 3GB
+        reservations:
+          cpus: 2
+          memory: 2GB
+
+volumes:
+  mongo1data:
+  mongo1config:
+  mongo2data:
+  mongo2config:
+  mongo3data:
+  mongo3config:
+  sharedconfig:
+
+networks:
+  default:
+    name: mongodb_replica_set_network
